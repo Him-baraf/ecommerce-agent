@@ -1,0 +1,33 @@
+{
+    "website": "amazon.com",
+    "headless": false,
+    "credentials": {
+        "username": "your_email@example.com",
+        "password": "your_password"
+    },
+    "items": [
+        {
+            "name": "iPhone charger",
+            "description": "Apple original lightning cable, white color, 1 meter length",
+            "quantity": 2,
+            "options": {
+                "color": "white",
+                "length": "1m"
+            }
+        },
+        {
+            "name": "wireless mouse",
+            "description": "Logitech MX Master 3, graphite color",
+            "quantity": 1
+        },
+        {
+            "name": "Blue light blocking glasses",
+            "description": "Anti-fatigue computer glasses, medium size, black frame",
+            "quantity": 1,
+            "options": {
+                "color": "black",
+                "size": "medium"
+            }
+        }
+    ]
+} 

@@ -1,0 +1,25 @@
+{
+    "ecommerce_site": "amazon",
+    "headless": false,
+    "credentials": {
+        "username": "your_email@example.com",
+        "password": "your_password"
+    },
+    "products": [
+        {
+            "url": "https://www.amazon.com/example-product-1",
+            "quantity": 2,
+            "options": {
+                "color": "blue",
+                "size": "medium"
+            }
+        },
+        {
+            "url": "https://www.amazon.com/example-product-2",
+            "quantity": 1,
+            "options": {
+                "variant": "standard"
+            }
+        }
+    ]
+} 
