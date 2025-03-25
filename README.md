@@ -24,6 +24,7 @@ A browser agent that automates the process of adding products to your cart on e-
   - URL-based approach (provide specific product URLs)
   - Search-based approach (provide website and product names to search for)
 - User-friendly web interface with Gradio
+- Session persistence for maintaining login state between runs
 
 ## Requirements
 
@@ -137,6 +138,25 @@ After login, the agent actively verifies successful login by checking for:
 
 This ensures the agent only proceeds when login is truly complete.
 
+### Session Persistence
+
+The agent now supports maintaining your login state between runs:
+
+- **How it works**: After successful login, the agent saves your browser session (cookies, local storage) to a local file
+- **Next run**: When you run the agent for the same website again, it automatically loads your saved session
+- **Benefits**:
+  - No need to log in every time you use the agent for the same website
+  - Handles cookies and other session data securely on your local machine
+  - Separate sessions for different websites and user accounts
+  - Especially valuable for sites with complex login processes (OTP, 2FA)
+
+- **Configuration**:
+  - In the web UI: The session is saved automatically
+  - In command line: You'll be asked if you want to save the session
+  - In code/API: Use the `use_session=True` parameter when creating the agent
+
+Note: For security, session data is stored in a `sessions` directory in the project root. You can delete these files at any time to clear saved login information.
+
 ## Command Line Usage
 
 ### Basic URL-Based Usage
@@ -235,6 +255,7 @@ The JSON file should follow this format:
         "username": "your_email@example.com",
         "password": "your_password"
     },
+    "use_session": true,
     "items": [
         {
             "name": "iPhone charger",
@@ -358,7 +379,8 @@ async def main():
             "username": "your_email@example.com",
             "password": "your_password"
         },
-        headless=False
+        headless=False,
+        use_session=True  # Enable session persistence
     )
     
     await agent.run()
@@ -422,11 +444,17 @@ The agent uses LLM reasoning to adapt to different website layouts and changes, 
    - Verifies each step before proceeding
    - Provides clear feedback when actions succeed or fail
 
+6. **Session Persistence**:
+   - Maintains login state between agent runs
+   - Securely stores cookies and session data locally
+   - Creates separate sessions for different websites and accounts
+   - Reduces the need for repetitive logins
+
 ## Future Improvements
 
 - Implement handling for more e-commerce sites
 - Add checkout automation (optional)
-- Save login sessions for future use
+- Enhance session management with expiration handling
 - Enhanced handling for complex captchas
 - Price monitoring and comparison across multiple sites
 - Enhance the UI with additional features (saved shopping lists, history tracking)

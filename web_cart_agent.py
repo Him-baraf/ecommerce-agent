@@ -1,6 +1,7 @@
 import asyncio
 import os
 import json
+import pathlib
 from typing import List, Dict, Optional, Union
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -42,6 +43,7 @@ class WebCartAgent:
             headless=headless
         )
         
+        # Initialize browser
         self.browser = Browser(config=browser_config)
         
         # Define task for the agent based on the website and items
@@ -115,6 +117,20 @@ browser.evaluate(js_code="alert('Please log in manually in this browser window. 
 browser.evaluate_and_return(js_code="return confirm('Have you COMPLETELY finished logging in? Click OK only after you have FULLY logged in including any OTP/2FA steps. Click Cancel if you need more time.');")
 """
 
+        # Create universal login instructions for all sites
+        universal_login_instructions = """
+        CRITICAL INSTRUCTIONS FOR ALL LOGIN PROCESSES:
+        - When on ANY login page, DO ABSOLUTELY NOTHING except display the alert.
+        - After showing the alert, FREEZE completely and DO NOT interact with the page.
+        - DO NOT click any elements, DO NOT refresh the page, DO NOT navigate away.
+        - DO NOT SEARCH GOOGLE for any login instructions or alert text. 
+        - WAIT in absolute stillness while the user inputs their credentials.
+        - Only proceed to the confirmation dialog after at least 30 seconds have passed.
+        - If the user cancels the confirmation, CONTINUE to wait without any page interaction.
+        - After successful login confirmation, verify the login by checking for user account icons/name.
+        - Only after confirmed login success, proceed with searching for items.
+        """
+
         # Create JavaScript code to check for login status
         js_check_login_status = """
 browser.evaluate_and_return(js_code=`
@@ -155,29 +171,33 @@ browser.evaluate_and_return(js_code=`
         Username/Email: {username}
         Password: {password}
         
+        {universal_login_instructions}
+
         ## Steps to Follow:
         1. Navigate to {self.website}.
         2. If login is required:
            a. Navigate to the login page (look for "Sign In" or "Login" links).
-           b. IMPORTANT: Execute the following JavaScript code to show an alert to the user:
+           b. IMPORTANT: After reaching the login page, STOP ALL ACTIONS and execute ONLY this JavaScript code:
               ```javascript
 {js_login_code}
               ```
-           c. WAIT while the user completes their login manually (do not proceed to next steps).
-           d. Many websites have multi-step login flows (email → password → OTP). The user needs to complete ALL steps.
-           e. After waiting at least 15 seconds for login to begin, check if the user has completed login using:
+           c. DO NOT SEARCH GOOGLE for the alert text. You must RUN the JavaScript code above to show an alert.
+           d. WAIT COMPLETELY STILL while the user completes their login manually. DO NOT click anything, refresh, or navigate.
+           e. Many websites have multi-step login flows (email → password → OTP). The user needs to complete ALL steps.
+           f. After waiting at least 30 seconds for login to complete, check if the user has completed login using:
               ```javascript
 {js_confirm_code}
               ```
-           f. If the user clicks Cancel, wait 10 more seconds and check again. REPEAT this step until the user confirms.
-           g. After the user confirms login completion, VERIFY the login was successful by checking for login indicators:
+           g. If the user clicks Cancel, wait 10 more seconds without any interaction and ask again. REPEAT this step until the user confirms.
+           h. After the user confirms login completion, VERIFY the login was successful by checking for login indicators:
               ```javascript
 {js_check_login_status}
               ```
-           h. If login indicators are not found (isLikelyLoggedIn is false), inform the user that you don't detect a login yet and ask them to confirm again after they have completed ALL login steps.
-           i. DO NOT use the "done" or "thought" actions during this process. You must actively wait for the user.
-           j. DO NOT search Google, use the search box, or navigate away while waiting for login.
-           k. You MUST execute the JavaScript alert and confirmation prompts - DO NOT SKIP THESE STEPS.
+           i. If login indicators are not found (isLikelyLoggedIn is false), inform the user that you don't detect a login yet and ask them to confirm again after they have completed ALL login steps.
+           j. DO NOT use the "done" or "thought" actions during this process. You must actively wait for the user.
+           k. DO NOT search Google, use the search box, or navigate away while waiting for login.
+           l. YOU MUST NOT INTERACT WITH THE PAGE AT ALL during login - no clicks, no typing, no refreshing.
+           m. You MUST execute the JavaScript alert and confirmation prompts EXACTLY as provided - DO NOT SKIP THESE STEPS or SEARCH FOR THE TEXT.
         
         3. For each item:
            a. Use the search function on the website to search for the item by name.
@@ -194,7 +214,7 @@ browser.evaluate_and_return(js_code=`
         ## Important Notes
         - NEVER end the task with "done" action until all items are added to cart.
         - NEVER search Google for login instructions or waiting messages.
-        - During login, you MUST show the JavaScript alert and then actively wait for confirmation.
+        - During login, you MUST REMAIN COMPLETELY STILL on the login page.
         - The JavaScript alert shown to the user will inform them to log in manually.
         - You must REPEATEDLY check if login is complete using the confirmation prompt.
         - Be patient during multi-step login flows (username → password → OTP/2FA).
@@ -217,6 +237,7 @@ browser.evaluate_and_return(js_code=`
             - For quantity changes, use the dropdown or quantity selector before adding to cart.
             - For login verification, check for the presence of "Hello, [Name]" in the top right or "Account & Lists" dropdown.
             - Amazon typically uses a multi-step login process (email first, then password). Make sure all steps are completed.
+            - CRITICAL: When on the login page, DO NOT click any buttons or refresh the page until the user completes login.
             - If OTP verification is required, wait until the user inputs the verification code.
             """,
             
@@ -227,6 +248,7 @@ browser.evaluate_and_return(js_code=`
             - If asked about pickup vs delivery, skip this step as we're only adding to cart.
             - For quantity, use the "+" button to increase or directly update the quantity field.
             - For login verification, check for the presence of account name or "Account" indicator that shows the user is logged in.
+            - CRITICAL: When on the login page, DO NOT click any buttons or refresh the page until the user completes login.
             """,
             
             "target": """
@@ -235,6 +257,7 @@ browser.evaluate_and_return(js_code=`
             - If prompted about protection plans or warranties, decline them.
             - For quantity, use the quantity selector before adding to cart.
             - For login verification, check for "Hi, [Name]" or the account icon in the top right.
+            - CRITICAL: When on the login page, DO NOT click any buttons or refresh the page until the user completes login.
             """,
             
             "bestbuy": """
@@ -243,6 +266,7 @@ browser.evaluate_and_return(js_code=`
             - If asked about store pickup vs shipping, skip this step.
             - For quantity, update the quantity selector before adding to cart.
             - For login verification, check for the account name or "Account" indicator in the top right.
+            - CRITICAL: When on the login page, DO NOT click any buttons or refresh the page until the user completes login.
             """,
             
             "ebay": """
@@ -251,6 +275,7 @@ browser.evaluate_and_return(js_code=`
             - For item variations (size, color, etc.), select them from the dropdown menus before adding to cart.
             - For quantity, update the quantity field before clicking "Add to cart".
             - For login verification, check for the username or a "My eBay" dropdown in the top right.
+            - CRITICAL: When on the login page, DO NOT click any buttons or refresh the page until the user completes login.
             """,
             
             "newegg": """
@@ -259,6 +284,22 @@ browser.evaluate_and_return(js_code=`
             - If there are combo deals or add-ons suggested, you can skip those.
             - Be aware of the "Auto-Add" features - deselect anything the user didn't specify.
             - For login verification, check for "Hi, [Name]" or account indicators in the top right.
+            - CRITICAL: When on the login page, DO NOT click any buttons or refresh the page until the user completes login.
+            """,
+
+            "flipkart": """
+            - For Flipkart, use the search bar at the top of the page.
+            - Pay attention to seller ratings when selecting products.
+            - Be aware of "Flipkart Assured" products which are more reliable.
+            - For login verification, check for the account name or icon in the top right.
+            - CRITICAL: When on the login page, DO NOT click any buttons or refresh the page until the user completes login.
+            - Flipkart login often involves OTP verification via phone - wait patiently without any interaction.
+            - If a login popup appears, DO NOT close it or click anywhere else on the page.
+            - Let the user handle all steps of the login process without any interference.
+            - Wait for the user to confirm they've completed login before proceeding.
+            - For quantity, use the quantity selector before adding to cart.
+            - Look for "ADD TO CART" button typically in orange or yellow.
+            - Avoid "BUY NOW" button as we're only adding to cart.
             """
         }
         
@@ -273,6 +314,9 @@ browser.evaluate_and_return(js_code=`
             - If prompted about additional options or warranties, decline them.
             - If there are product variations (size, color, etc.), select them before adding to cart.
             - For login verification, look for account name, user-specific elements, or welcome messages.
+            - CRITICAL: When on the login page, DO NOT click any buttons or refresh the page until the user completes login.
+            - If login involves OTP verification or captcha, wait patiently without any interaction.
+            - Let the user handle all steps of the login process without any interference.
             """
         
         return base_task + site_specific
@@ -282,14 +326,11 @@ browser.evaluate_and_return(js_code=`
         print(f"Starting web cart agent for {self.website}")
         print(f"Adding {len(self.items)} item(s) to cart")
         
-        # If credentials were provided via the UI, use them directly
-        # If not, let the agent navigate to the site first and handle login when required
-        # through browser interaction
-        
-        # Run the agent
         try:
+            # Run the agent
             await self.agent.run()
             print(f"Task completed successfully. All items have been added to cart on {self.website}.")
+                
         except Exception as e:
             print(f"Error during execution: {str(e)}")
         finally:
