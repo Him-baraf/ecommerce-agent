@@ -11,7 +11,7 @@ load_dotenv()
 # Global variables
 temp_json_path = "temp_cart_config.json"
 
-def create_temp_config(website, items_text, credentials=None, headless=False, browser_instance_path=None):
+def create_temp_config(website, items_text, credentials=None, headless=False):
     """
     Create a temporary JSON configuration file from the UI inputs.
     
@@ -20,7 +20,6 @@ def create_temp_config(website, items_text, credentials=None, headless=False, br
         items_text: Text with items (one per line)
         credentials: Optional dictionary with username and password
         headless: Whether to run in headless mode
-        browser_instance_path: Optional path to browser executable
     
     Returns:
         Path to the created config file
@@ -69,17 +68,13 @@ def create_temp_config(website, items_text, credentials=None, headless=False, br
     if credentials and credentials.get("username") and credentials.get("password"):
         config["credentials"] = credentials
     
-    # Add browser instance path if provided
-    if browser_instance_path:
-        config["browser_instance_path"] = browser_instance_path
-    
     # Write to temp file
     with open(temp_json_path, 'w') as f:
         json.dump(config, f, indent=4)
         
     return temp_json_path
 
-async def run_cart_agent(website, items_text, use_credentials, username, password, headless, browser_instance_path):
+async def run_cart_agent(website, items_text, use_credentials, username, password, headless):
     """Run the web cart agent with the provided configuration."""
     # Create credentials dict if needed
     credentials = None
@@ -90,7 +85,7 @@ async def run_cart_agent(website, items_text, use_credentials, username, passwor
         }
     
     # Create temporary config file
-    config_path = create_temp_config(website, items_text, credentials, headless, browser_instance_path)
+    config_path = create_temp_config(website, items_text, credentials, headless)
     
     # Display the generated configuration
     with open(config_path, 'r') as f:
@@ -118,23 +113,9 @@ async def run_cart_agent(website, items_text, use_credentials, username, passwor
     if 'credentials' in config_json and config_json['credentials'].get('username') and config_json['credentials'].get('password'):
         log += "Login credentials provided. The agent will attempt to use them if needed.\n"
     else:
-        log += "No login credentials provided. If login is required, the browser will pause at the login page.\n"
-        log += "You will need to manually enter your credentials in the browser when you see the login page.\n"
+        log += "No login credentials provided. If login is required, the browser will open to the login page and pause.\n"
+        log += "You will need to manually enter your credentials in the browser when prompted.\n"
         log += "This approach works better for sites with OTP verification, CAPTCHA, or two-factor authentication.\n"
-    
-    # Add browser instance information to the log
-    if 'browser_instance_path' in config_json and config_json['browser_instance_path']:
-        browser_path = config_json['browser_instance_path']
-        log += f"Using browser at path: {browser_path}\n"
-        log += "The system will launch your specified browser for automation.\n"
-        log += "You'll need to login to websites in this browser window.\n"
-        log += "Your existing browser windows and tabs will remain untouched.\n"
-        log += "The browser window will stay open after the task completes.\n"
-        log += "\nNOTE: If you see an error about browser initialization:\n"
-        log += "1. Check that the browser path is correct and accessible\n"
-        log += "2. Make sure the browser is installed on your system\n"
-        log += "3. Try using the direct executable path instead of just the .app file\n"
-        log += "\nInitializing browser connection (this may take a moment)...\n"
     
     log += "Starting web cart agent...\n"
     
@@ -144,8 +125,7 @@ async def run_cart_agent(website, items_text, use_credentials, username, passwor
             website=config_json['website'],
             items=config_json['items'],
             credentials=config_json.get('credentials', {}),
-            headless=config_json.get('headless', False),
-            browser_instance_path=config_json.get('browser_instance_path')
+            headless=config_json.get('headless', False)
         )
         
         # Update log with initialization status
@@ -158,9 +138,8 @@ async def run_cart_agent(website, items_text, use_credentials, username, passwor
             log += f"Browser will launch in headless mode. This may not work if login is required.\n"
             
         log += "This may take a few moments...\n"
-        log += "If login is required, the agent will navigate to the login page and wait silently.\n"
-        log += "Simply complete the login process in the browser window when you see the login page.\n"
-        log += "The agent will automatically detect when login is complete and continue shopping.\n"
+        log += "If login is required, the agent will navigate to the login page and wait for your input.\n"
+        log += "Simply complete the login process in the browser window when it appears.\n"
         
         # Start the agent in a way that allows us to update the UI
         task = asyncio.create_task(agent.run())
@@ -227,52 +206,6 @@ def create_ui():
                     info="If checked, the browser will run in the background (no visible window)"
                 )
                 
-                # Browser instance path
-                with gr.Accordion("Browser Settings", open=False):
-                    gr.Markdown("""
-                    ### Browser Instance Path
-                    
-                    If you want to use a specific browser installation, you can provide the path to the browser executable.
-                    The system will use your specified browser to automate the shopping process.
-                    
-                    **How it works:**
-                    - Opens a new browser window using your specified browser
-                    - The automation will control this browser window
-                    - Your existing browser tabs remain untouched
-                    - The browser window will stay open after the task finishes
-                    
-                    **Browser Executable Paths:**
-                    
-                    **macOS Example Paths:**
-                    - Chrome: `/Applications/Google Chrome.app` or direct executable `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`
-                    - Brave: `/Applications/Brave Browser.app` or direct executable `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`
-                    - Edge: `/Applications/Microsoft Edge.app` or direct executable `/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge`
-                    
-                    **Windows Example Paths:**
-                    - Chrome: `C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe`
-                    - Brave: `C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`
-                    - Edge: `C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe`
-                    
-                    **Linux Example Paths:**
-                    - Chrome: `/usr/bin/google-chrome`
-                    - Brave: `/usr/bin/brave-browser`
-                    - Edge: `/usr/bin/microsoft-edge`
-                    
-                    **Important Notes:**
-                    - Enter the EXACT path to the browser executable on your system
-                    - For macOS, you can specify just the .app bundle or the full path to the binary
-                    - Make sure the browser is installed and the path is correct
-                    - The browser's built-in automation mode will be used for best compatibility
-                    
-                    Leave empty to use the default system browser.
-                    """)
-                    
-                    browser_path_input = gr.Textbox(
-                        label="Browser Instance Path",
-                        placeholder="/Applications/Google Chrome.app",
-                        info="Path to browser executable - specify which browser to use for automation"
-                    )
-                
                 # Credentials section
                 with gr.Accordion("Login Credentials (Optional)", open=False):
                     gr.Markdown("""
@@ -283,8 +216,7 @@ def create_ui():
                     **Option 2:** Leave empty and manually log in when the browser opens
                     
                     **Note:** For websites with OTP verification, CAPTCHA, or two-factor authentication, 
-                    you should leave credentials empty and complete the login manually when the browser shows the login page.
-                    The agent will remain still during the login process and automatically detect when login is complete.
+                    you should leave credentials empty and complete the login manually when the browser opens.
                     """)
                     
                     use_credentials = gr.Checkbox(
@@ -336,8 +268,7 @@ def create_ui():
                 use_credentials,
                 username_input,
                 password_input,
-                headless_checkbox,
-                browser_path_input
+                headless_checkbox
             ],
             outputs=output_log,
             api_name="add_to_cart"

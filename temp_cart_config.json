@@ -1,9 +1,0 @@
-{
-    "website": "amazon.in",
-    "items": [
-        {
-            "name": "pen"
-        }
-    ],
-    "headless": false
-}

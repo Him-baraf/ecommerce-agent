@@ -2,8 +2,6 @@ import asyncio
 import os
 import json
 import pathlib
-import subprocess
-import time
 from typing import List, Dict, Optional, Union
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
@@ -18,8 +16,7 @@ class WebCartAgent:
         website: str,
         items: List[dict],
         credentials: Dict[str, str] = None,
-        headless: bool = False,
-        browser_instance_path: Optional[str] = None
+        headless: bool = False
     ):
         """
         Initialize the web cart agent.
@@ -29,12 +26,9 @@ class WebCartAgent:
             items (List[dict]): List of items to add to cart, each with name and optional details
             credentials (Dict[str, str], optional): Login credentials with keys 'username' and 'password'
             headless (bool, optional): Whether to run browser in headless mode
-            browser_instance_path (str, optional): Path to your browser executable to use for automation
         """
         self.website = website
         self.items = items
-        self.browser_process = None
-        self.custom_browser_used = False
         
         # Try to get credentials from environment variables if not provided
         self.credentials = self._get_credentials(credentials)
@@ -44,46 +38,12 @@ class WebCartAgent:
         width = int(os.getenv('BROWSER_WIDTH', 1280))
         height = int(os.getenv('BROWSER_HEIGHT', 800))
         
-        # Get browser_instance_path from environment if not provided
-        if not browser_instance_path:
-            browser_instance_path = os.getenv('BROWSER_INSTANCE_PATH')
-            
-        self.browser_instance_path = browser_instance_path
-        
-        # Initialize browser configuration with defaults
-        browser_config = BrowserConfig(headless=headless)
-        
-        # Launch custom browser if path is provided
-        if browser_instance_path:
-            print(f"Launching browser from: {browser_instance_path}")
-            
-            # The browser-use package can directly use the browser_instance_path
-            if os.path.isfile(browser_instance_path):
-                print(f"Using direct browser executable path")
-                browser_config = BrowserConfig(
-                    headless=False,  # Always visible for custom browser
-                    browser_instance_path=browser_instance_path
-                )
-                self.custom_browser_used = True
-            else:
-                print(f"Browser executable not found at path, attempting to resolve...")
-                # Handle .app paths for macOS
-                if browser_instance_path.endswith('.app') and os.path.isdir(browser_instance_path):
-                    full_path = self._resolve_app_path(browser_instance_path)
-                    if full_path and os.path.isfile(full_path):
-                        print(f"Resolved to: {full_path}")
-                        browser_config = BrowserConfig(
-                            headless=False,  # Always visible for custom browser
-                            browser_instance_path=full_path
-                        )
-                        self.custom_browser_used = True
-                    else:
-                        print(f"Could not resolve .app path, using default browser")
-                else:
-                    print(f"Invalid browser path, using default browser")
+        # Browser configuration
+        browser_config = BrowserConfig(
+            headless=headless
+        )
         
         # Initialize browser
-        print(f"Initializing browser with config: {browser_config}")
         self.browser = Browser(config=browser_config)
         
         # Define task for the agent based on the website and items
@@ -149,49 +109,26 @@ class WebCartAgent:
         
         # Create the JavaScript code for login prompt as a separate variable
         js_login_code = """
-// No prompt, just silently remain on the login page for the user
+browser.evaluate(js_code="alert('Please log in manually in this browser window. Click OK to dismiss this message and begin login. For multi-step login flows (email → password → OTP), complete ALL steps.');")
 """
         
-        # Create a periodic login status check code instead of a confirmation prompt
+        # Create a confirmation JavaScript code
         js_confirm_code = """
-browser.evaluate_and_return(js_code=`
-  // Check login status without showing a prompt
-  // Look for common login indicators
-  const accountElements = document.querySelectorAll('a[href*=account], span[class*=account], div[class*=account], a[class*=account], *[aria-label*=account], *[id*=account]');
-  const cartElements = document.querySelectorAll('a[href*=cart], span[class*=cart], div[class*=cart], *[aria-label*=cart], *[id*=cart]');
-  const userNameElements = document.querySelectorAll('*:not(meta):not(script):not(style):not(path):not(input):not(button):not(a)[class*=user], *:not(meta):not(script):not(style):not(path):not(input):not(button):not(a)[id*=user]');
-  const signOutElements = document.querySelectorAll('a[href*=logout], a[href*=signout], *[class*=logout], *[class*=signout], *[id*=logout], *[id*=signout], a:contains("Sign Out"), a:contains("Log Out")');
-  
-  // Get text content of potential account elements to check for logged-in state
-  const accountText = Array.from(accountElements).map(el => el.textContent.trim()).join('|');
-  const userText = Array.from(userNameElements).map(el => el.textContent.trim()).join('|');
-  
-  // Return the findings as an object
-  return {
-    hasAccountElements: accountElements.length > 0,
-    hasCartElements: cartElements.length > 0,
-    hasUserNameElements: userNameElements.length > 0,
-    hasSignOutElements: signOutElements.length > 0,
-    accountText,
-    userText,
-    isLikelyLoggedIn: accountElements.length > 0 || signOutElements.length > 0 || userNameElements.length > 0
-  };
-`)
+browser.evaluate_and_return(js_code="return confirm('Have you COMPLETELY finished logging in? Click OK only after you have FULLY logged in including any OTP/2FA steps. Click Cancel if you need more time.');")
 """
 
         # Create universal login instructions for all sites
         universal_login_instructions = """
         CRITICAL INSTRUCTIONS FOR ALL LOGIN PROCESSES:
-        - When on ANY login page, DO ABSOLUTELY NOTHING. Do not show alerts or prompts.
-        - FREEZE completely and DO NOT interact with the page in any way.
+        - When on ANY login page, DO ABSOLUTELY NOTHING except display the alert.
+        - After showing the alert, FREEZE completely and DO NOT interact with the page.
         - DO NOT click any elements, DO NOT refresh the page, DO NOT navigate away.
-        - DO NOT SEARCH GOOGLE for any login instructions or text. 
+        - DO NOT SEARCH GOOGLE for any login instructions or alert text. 
         - WAIT in absolute stillness while the user inputs their credentials.
-        - SILENTLY check login status in the background every 10 seconds.
-        - DO NOT display any prompts asking if the user has completed login.
-        - DO NOT interrupt the user's login process with any messages.
-        - After detecting successful login status, verify the login by checking for user account icons/name.
-        - Only after detecting login success through silent status checks, proceed with searching for items.
+        - Only proceed to the confirmation dialog after at least 30 seconds have passed.
+        - If the user cancels the confirmation, CONTINUE to wait without any page interaction.
+        - After successful login confirmation, verify the login by checking for user account icons/name.
+        - Only after confirmed login success, proceed with searching for items.
         """
 
         # Create JavaScript code to check for login status
@@ -240,18 +177,27 @@ browser.evaluate_and_return(js_code=`
         1. Navigate to {self.website}.
         2. If login is required:
            a. Navigate to the login page (look for "Sign In" or "Login" links).
-           b. IMPORTANT: After reaching the login page, STOP ALL ACTIONS completely. DO NOT show any alerts or prompts.
-           c. WAIT COMPLETELY STILL while the user completes their login manually. DO NOT click anything, refresh, or navigate.
-           d. Many websites have multi-step login flows (email → password → OTP). The user needs to complete ALL steps.
-           e. Silently check login status in the background every 10 seconds using:
+           b. IMPORTANT: After reaching the login page, STOP ALL ACTIONS and execute ONLY this JavaScript code:
+              ```javascript
+{js_login_code}
+              ```
+           c. DO NOT SEARCH GOOGLE for the alert text. You must RUN the JavaScript code above to show an alert.
+           d. WAIT COMPLETELY STILL while the user completes their login manually. DO NOT click anything, refresh, or navigate.
+           e. Many websites have multi-step login flows (email → password → OTP). The user needs to complete ALL steps.
+           f. After waiting at least 30 seconds for login to complete, check if the user has completed login using:
               ```javascript
 {js_confirm_code}
               ```
-           f. When login status check indicates login success (isLikelyLoggedIn is true), proceed to the next step.
-           g. DO NOT use the "done" or "thought" actions during this process. You must actively wait for the user.
-           h. DO NOT search Google, use the search box, or navigate away while waiting for login.
-           i. YOU MUST NOT INTERACT WITH THE PAGE AT ALL during login - no clicks, no typing, no refreshing.
-           j. DO NOT show any popup messages or alerts during the login process.
+           g. If the user clicks Cancel, wait 10 more seconds without any interaction and ask again. REPEAT this step until the user confirms.
+           h. After the user confirms login completion, VERIFY the login was successful by checking for login indicators:
+              ```javascript
+{js_check_login_status}
+              ```
+           i. If login indicators are not found (isLikelyLoggedIn is false), inform the user that you don't detect a login yet and ask them to confirm again after they have completed ALL login steps.
+           j. DO NOT use the "done" or "thought" actions during this process. You must actively wait for the user.
+           k. DO NOT search Google, use the search box, or navigate away while waiting for login.
+           l. YOU MUST NOT INTERACT WITH THE PAGE AT ALL during login - no clicks, no typing, no refreshing.
+           m. You MUST execute the JavaScript alert and confirmation prompts EXACTLY as provided - DO NOT SKIP THESE STEPS or SEARCH FOR THE TEXT.
         
         3. For each item:
            a. Use the search function on the website to search for the item by name.
@@ -269,11 +215,12 @@ browser.evaluate_and_return(js_code=`
         - NEVER end the task with "done" action until all items are added to cart.
         - NEVER search Google for login instructions or waiting messages.
         - During login, you MUST REMAIN COMPLETELY STILL on the login page.
-        - DO NOT display any alerts or prompts during the login process.
-        - Silently check login status in the background periodically.
+        - The JavaScript alert shown to the user will inform them to log in manually.
+        - You must REPEATEDLY check if login is complete using the confirmation prompt.
         - Be patient during multi-step login flows (username → password → OTP/2FA).
+        - Use the login status check to verify that login was successful before proceeding.
+        - If the user confirms login but the status check fails, ask them to double-check that all login steps were completed.
         - Look for the presence of account name, user-specific elements, or cart access as indicators of successful login.
-        - Clear search results before searching for items.
         
         ## Website-Specific Instructions
         """
@@ -383,58 +330,14 @@ browser.evaluate_and_return(js_code=`
             # Run the agent
             await self.agent.run()
             print(f"Task completed successfully. All items have been added to cart on {self.website}.")
-            
-            # Let the user know we're finishing up
-            if self.custom_browser_used:
-                print("Task complete. The browser window will remain open so you can continue shopping.")
-                print("All browser resources and connections have been preserved for your use.")
-            else:
-                # For default browser, we just notify completion
-                print("Task complete. Your items remain in the cart on the website.")
                 
         except Exception as e:
             print(f"Error during execution: {str(e)}")
-            print("Browser window is still available for your use.")
-            
-        # Call cleanup even though it doesn't do much
-        await self.cleanup()
-    
-    async def cleanup(self):
-        """
-        Cleanup resources but keep the browser open.
-        This allows you to continue using the browser window after the agent completes.
-        """
-        try:
-            print("Task complete. The browser window will remain open so you can continue shopping.")
-            print("All resources have been preserved for continued use.")
-            
-            # We don't need to do any cleanup as browser-use package handles it
-            # and we've configured the browser to use an existing browser instance
-            pass
-        except Exception as e:
-            print(f"Note: Error during cleanup: {str(e)}")
-            print("This is non-critical; continue using your browser window.")
-    
-    def _resolve_app_path(self, app_path):
-        """Resolve macOS .app path to find the executable inside."""
-        try:
-            if "Brave" in app_path:
-                return os.path.join(app_path, 'Contents/MacOS/Brave Browser')
-            elif "Chrome" in app_path:
-                return os.path.join(app_path, 'Contents/MacOS/Google Chrome')
-            elif "Firefox" in app_path:
-                return os.path.join(app_path, 'Contents/MacOS/firefox')
-            elif "Safari" in app_path:
-                return os.path.join(app_path, 'Contents/MacOS/Safari')
-            elif "Edge" in app_path:
-                return os.path.join(app_path, 'Contents/MacOS/Microsoft Edge')
-            else:
-                # Generic fallback
-                app_name = os.path.basename(app_path).replace('.app', '')
-                return os.path.join(app_path, f'Contents/MacOS/{app_name}')
-        except Exception as e:
-            print(f"Error resolving app path: {str(e)}")
-            return None
+        finally:
+            # Wait 5 seconds before closing the browser
+            print("Browser will close in 5 seconds. Your items remain in the cart on the website.")
+            await asyncio.sleep(5)  # 5-second delay
+            await self.browser.close()
 
 async def run_from_json(json_file):
     """Run the agent from a JSON configuration file."""
@@ -445,15 +348,10 @@ async def run_from_json(json_file):
         website=config['website'],
         items=config.get('items', []),
         credentials=config.get('credentials', {}),
-        headless=config.get('headless', False),
-        browser_instance_path=config.get('browser_instance_path')
+        headless=config.get('headless', False)
     )
     
-    try:
-        await agent.run()
-    except Exception as e:
-        print(f"Error during execution: {str(e)}")
-        print("Browser window is still available for your use.")
+    await agent.run()
 
 async def run_interactive():
     """Run the agent in interactive mode, prompting for details."""
@@ -507,22 +405,14 @@ async def run_interactive():
         credentials['username'] = input("Enter username/email: ")
         credentials['password'] = input("Enter password: ")
     
-    # Get browser instance path (optional)
-    browser_path = input("\nEnter path to browser executable (or leave blank for default): ")
-    
     # Create and run the agent
     agent = WebCartAgent(
         website=website,
         items=items,
-        credentials=credentials,
-        browser_instance_path=browser_path if browser_path else None
+        credentials=credentials
     )
     
-    try:
-        await agent.run()
-    except Exception as e:
-        print(f"Error during execution: {str(e)}")
-        print("Browser window is still available for your use.")
+    await agent.run()
 
 async def main():
     print("Web Cart Agent")
