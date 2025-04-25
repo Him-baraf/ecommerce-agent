@@ -1,8 +1,12 @@
 python-dotenv==1.0.0
+langchain==0.1.20
+langchain-core==0.1.53
+langchain-community==0.0.38
 langchain-openai==0.0.2
+langchain-text-splitters==0.0.2
+langchain-ollama==0.0.38
 openai>=1.10.0
 playwright>=1.35.0
-langchain>=0.0.311
 pydantic>=2.0.0
 asyncio>=3.4.3
 typing-extensions>=4.5.0
